@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Color Echo</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background: #03045E;
+            color: white;
+            height: 100vh;
+            justify-content: center;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        #menu {
+            margin-bottom: 20px;
+        }
+
+        select, button {
+            padding: 8px 16px;
+            margin-right: 10px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-template-rows: repeat(3, 100px);
+            gap: 10px;
+            margin-top: 20px;
+            filter: none;
+            transition: filter 0.5s;
+        }
+
+        .tile {
+            border-radius: 10px;
+            cursor: pointer;
+            opacity: 0.8;
+            transition: transform 0.3s, opacity 0.3s;
+        }
+
+        .tile.active {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .grayscale {
+            filter: grayscale(100%);
+        }
+
+        #round {
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+
+        #message {
+            display: none;
+            font-size: 22px;
+            color: red;
+            margin-top: 20px;
+        }
+
+        #timer {
+            margin-top: 10px;
+            font-size: 18px;
+            display: none;
+        }
+
+        #timerBarContainer {
+            width: 300px;
+            height: 20px;
+            background: #555;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 5px;
+            display: none;
+        }
+
+        #timerBar {
+            height: 100%;
+            background: limegreen;
+            width: 100%;
+            transition: width 1s linear;
+        }
+
+        #highScore {
+            margin-top: 15px;
+            font-size: 18px;
+            color: #0f0;
+        }
+
+        #howToPlay {
+            margin: 20px;
+            width: 80%;
+            max-width: 500px;
+            font-size: 16px;
+            background: #333;
+            border-radius: 10px;
+            padding: 10px 20px;
+        }
+
+        details summary {
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        details[open] summary {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Color Echo</h1>
+
+    <details id="howToPlay">
+        <summary>How to Play</summary>
+        <p>1. Watch the sequence of flashing colors carefully.</p>
+        <p>2. Repeat the sequence by clicking the same tiles in order.</p>
+        <p>3. Each round, a new tile is added to the sequence.</p>
+        <p>4. In Timer Mode, you get 25 seconds and +5s for each round.</p>
+        <p>5. Make a mistake or run out of time, and it's game over!</p>
+    </details>
+
+    <div id="menu">
+        <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+            <option value="timer">Timer Mode</option>
+        </select>
+        <button id="startBtn">Start Game</button>
+    </div>
+
+    <div id="round">Round: 0</div>
+
+    <div id="timer">Time: 25</div>
+    <div id="timerBarContainer">
+        <div id="timerBar"></div>
+    </div>
+
+    <div id="highScore">High Score (Normal): 0</div>
+
+    <div id="grid"></div>
+
+    <div id="message">Wrong! Game Over.</div>
+
+    <script>
+        const colors = [
+            "#FF4C4C", "#4CFF4C", "#4C4CFF",
+            "#FFD700", "#FF69B4", "#00CED1",
+            "#FFA500", "#8A2BE2", "#00FF00"
+        ];
+
+        let sequence = [];
+        let playerSequence = [];
+        let canClick = false;
+        let currentMode = "normal";
+        let timerId = null;
+        let timeLeft = 25;
+        let maxTime = 25;
+
+        const speeds = {
+            easy: 800,
+            normal: 600,
+            hard: 400,
+            timer: 600
+        };
+
+        let highScores = {
+            easy: 0,
+            normal: 0,
+            hard: 0,
+            timer: 0
+        };
+
+        const grid = document.getElementById("grid");
+        const startBtn = document.getElementById("startBtn");
+        const roundText = document.getElementById("round");
+        const timerText = document.getElementById("timer");
+        const timerBarCont = document.getElementById("timerBarContainer");
+        const timerBar = document.getElementById("timerBar");
+        const message = document.getElementById("message");
+        const difficultySelect = document.getElementById("difficulty");
+        const highScoreText = document.getElementById("highScore");
+
+        function createGrid() {
+            grid.innerHTML = "";
+            for (let i = 0; i < 9; i++) {
+                let tile = document.createElement("div");
+                tile.className = "tile";
+                tile.style.background = colors[i];
+                tile.dataset.index = i;
+
+                let debounce = false;
+                tile.addEventListener("click", () => {
+                    if (!canClick || debounce) return;
+                    debounce = true;
+                    tileClicked(i);
+                    setTimeout(() => debounce = false, 300); // debounce click
+                });
+
+                grid.appendChild(tile);
+            }
+        }
+
+        function flashTile(i) {
+            let tile = grid.children[i];
+            tile.classList.add("active");
+            setTimeout(() => tile.classList.remove("active"), 500);
+        }
+
+        function showSequence() {
+            canClick = false;
+            grid.classList.remove("grayscale");
+
+            sequence.forEach((num, i) => {
+                setTimeout(() => {
+                    flashTile(num);
+                    if (i === sequence.length - 1) {
+                        setTimeout(() => {
+                            grid.classList.add("grayscale");
+                            canClick = true;
+                        }, 600);
+                    }
+                }, speeds[currentMode] * (i + 1));
+            });
+        }
+
+        function updateRound() {
+            roundText.textContent = "Round: " + sequence.length;
+        }
+
+        function updateHighScore() {
+            highScoreText.textContent = "High Score (" + capitalize(currentMode) + "): " + highScores[currentMode];
+        }
+
+        function capitalize(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+
+        function nextRound() {
+            sequence.push(Math.floor(Math.random() * 9));
+            playerSequence = [];
+            updateRound();
+            showSequence();
+        }
+
+        function tileClicked(i) {
+            if (!canClick) return;
+
+            playerSequence.push(i);
+            flashTile(i);
+
+            for (let j = 0; j < playerSequence.length; j++) {
+                if (playerSequence[j] !== sequence[j]) {
+                    endGame();
+                    return;
+                }
+            }
+
+            if (playerSequence.length === sequence.length) {
+                if (currentMode === "timer") {
+                    timeLeft += 5;
+                    maxTime += 5;
+                    updateTimer();
+                }
+                setTimeout(nextRound, 1000);
+            }
+        }
+
+        function endGame() {
+            canClick = false;
+            clearInterval(timerId);
+            timeLeft = 25;    // reset timer values
+            maxTime = 25;
+            timerText.style.display = "none";
+            timerBarCont.style.display = "none";
+            message.style.display = "block";
+            startBtn.disabled = false;
+
+            if (sequence.length > highScores[currentMode]) {
+                highScores[currentMode] = sequence.length;
+                updateHighScore();
+            }
+        }
+
+        function startTimer() {
+            timeLeft = 25;
+            maxTime = 25;
+            timerText.style.display = "block";
+            timerBarCont.style.display = "block";
+            updateTimer();
+
+            timerId = setInterval(() => {
+                timeLeft--;
+                updateTimer();
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerId);
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        function updateTimer() {
+            timerText.textContent = "Time: " + timeLeft;
+            timerBar.style.width = (timeLeft / maxTime) * 100 + "%";
+            timerBar.style.background = timeLeft <= 5 ? "red" : "limegreen";
+        }
+
+        difficultySelect.addEventListener("change", () => {
+            currentMode = difficultySelect.value;
+            updateHighScore();
+            message.style.display = "none";
+            roundText.textContent = "Round: 0";
+        });
+
+        startBtn.addEventListener("click", () => {
+            sequence = [];
+            playerSequence = [];
+            currentMode = difficultySelect.value;
+            clearInterval(timerId);
+            message.style.display = "none";
+            startBtn.disabled = true;
+            updateRound();
+            updateHighScore();
+
+            if (currentMode === "timer") {
+                startTimer();
+            } else {
+                timerText.style.display = "none";
+                timerBarCont.style.display = "none";
+            }
+
+            nextRound();
+        });
+
+        createGrid();
+        updateHighScore();
+    </script>
+</body>
+</html>
